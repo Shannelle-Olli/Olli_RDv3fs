@@ -337,7 +337,7 @@
       <div class="table-header">
         <div class="table-title">SKU Revenue Detail</div>
         <div class="filter-group">
-          <input class="search-box" type="text" placeholder="Search SKU or customer..." id="skuSearch" oninput="filterSKUs()">
+          <input class="search-box" type="text" placeholder="Search SKU or brand..." id="skuSearch" oninput="filterSKUs()">
           <select class="filter-select" id="skuBrandFilter" onchange="filterSKUs()"><option value="">All Brands</option></select>
           <select class="filter-select" id="skuChannelFilter" onchange="filterSKUs()">
             <option value="">All Channels</option>
@@ -354,9 +354,8 @@
           <thead><tr>
             <th>Product Description</th>
             <th>Brand</th>
-            <th>Customer</th>
-            <th>Channel</th>
-            <th>Brand Type</th>
+            <th>Customers</th>
+            <th>Channels</th>
             <th class="num">Revenue (Period)</th>
           </tr></thead>
           <tbody id="skuTableBody"></tbody>
@@ -827,15 +826,42 @@ function filterSKUs() {
   const channel = document.getElementById('skuChannelFilter').value;
   const bt = document.getElementById('skuBrandTypeFilter').value;
 
-  skuFiltered = SKU_DATA.filter(s => {
+  // First filter raw rows, then group by SKU+Brand
+  const rawFiltered = SKU_DATA.filter(s => {
     const rev = skuRevForPeriod(s);
     if (!rev) return false;
     if (brand && s.Brand !== brand) return false;
     if (channel && s['Channel Type'] !== channel) return false;
     if (bt && s['Brand Type'] !== bt) return false;
-    if (search && !s['Product Description'].toLowerCase().includes(search) && !s.Customer.toLowerCase().includes(search)) return false;
+    if (search && !s['Product Description'].toLowerCase().includes(search) && !s.Customer.toLowerCase().includes(search) && !s.Brand.toLowerCase().includes(search)) return false;
     return true;
-  }).sort((a,b) => skuRevForPeriod(b) - skuRevForPeriod(a));
+  });
+
+  // Group by Product Description + Brand, aggregate customers, channels, rev
+  const skuMap = {};
+  for (const s of rawFiltered) {
+    const key = s['Product Description'] + '|||' + s.Brand;
+    if (!skuMap[key]) {
+      skuMap[key] = {
+        'Product Description': s['Product Description'],
+        'Brand': s.Brand,
+        'Brand Type': s['Brand Type'],
+        customers: new Set(),
+        channels: new Set(),
+        rev: 0,
+        Rev_2023: 0, Rev_2024: 0, Rev_2025: 0, Rev_2026: 0
+      };
+    }
+    skuMap[key].customers.add(s.Customer);
+    skuMap[key].channels.add(s['Channel Type']);
+    skuMap[key].rev += skuRevForPeriod(s);
+    skuMap[key].Rev_2023 += (s.Rev_2023 || 0);
+    skuMap[key].Rev_2024 += (s.Rev_2024 || 0);
+    skuMap[key].Rev_2025 += (s.Rev_2025 || 0);
+    skuMap[key].Rev_2026 += (s.Rev_2026 || 0);
+  }
+
+  skuFiltered = Object.values(skuMap).sort((a,b) => b.rev - a.rev);
 
 
   // Render SKU stacked bar (top 15 SKUs by revenue, stacked by year)
@@ -848,7 +874,7 @@ function filterSKUs() {
     charts['skuStackedBar'] = new Chart(document.getElementById('skuStackedBar'), {
       type: 'bar',
       data: {
-        labels: top15.map(s => s['Product Description'].length > 32 ? s['Product Description'].slice(0,30)+'…' : s['Product Description']),
+        labels: top15.map(s => s['Product Description'].length > 34 ? s['Product Description'].slice(0,32)+'…' : s['Product Description']),
         datasets: years.map(y => ({
           label: String(y),
           data: top15.map(s => s[`Rev_${y}`] || 0),
@@ -888,15 +914,13 @@ function renderSKUTable() {
   const slice = skuFiltered.slice(start, end);
   tbody.innerHTML = '';
   slice.forEach(s => {
-    const rev = skuRevForPeriod(s);
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td style="max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${s['Product Description']}">${s['Product Description']}</td>
+      <td style="max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${s['Product Description']}">${s['Product Description']}</td>
       <td>${s.Brand}</td>
-      <td>${s.Customer}</td>
-      <td><span class="badge badge-${s['Channel Type']==='Medical'?'medical':s['Channel Type']==='Rec Market'?'rec':'private'}">${s['Channel Type']}</span></td>
-      <td><span class="badge badge-${s['Brand Type']==='Olli Brands'?'olli':s['Brand Type']==='Partner'?'partner':'pl'}">${s['Brand Type']}</span></td>
-      <td class="num">${fmtFull(rev)}</td>
+      <td style="font-size:11px;color:var(--text2);max-width:160px;">${[...s.customers].sort().join(', ')}</td>
+      <td>${[...s.channels].map(c=>`<span class="badge badge-${c==='Medical'?'medical':c==='Rec Market'?'rec':'private'}">${c}</span>`).join(' ')}</td>
+      <td class="num">${fmtFull(s.rev)}</td>
     `;
     tbody.appendChild(tr);
   });
