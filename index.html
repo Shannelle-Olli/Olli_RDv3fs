@@ -205,6 +205,8 @@
     <select class="slicer-select" id="toSelect"></select>
     <button class="apply-btn" onclick="applyCustomRange()">Apply</button>
   </div>
+  <div class="slicer-divider"></div>
+  <button class="apply-btn" onclick="clearAllFilters()" style="border-color:#e07a5f;color:#e07a5f;">&#x2715; Clear All</button>
 </div>
 
 <!-- NAV -->
@@ -249,9 +251,9 @@
   <!-- BRANDS -->
   <div class="page" id="page-brands">
     <div class="chart-full chart-card" style="margin-bottom:18px;">
-      <div class="chart-title">Brand Revenue — Selected Period</div>
+      <div class="chart-title">Monthly Revenue by Brand</div>
       <div class="chart-subtitle" id="brandChartSub"></div>
-      <canvas id="brandGroupBar" height="90"></canvas>
+      <canvas id="brandGroupBar" height="110"></canvas>
     </div>
     <div class="table-card">
       <div class="table-header">
@@ -301,6 +303,24 @@
             <th class="num">% of Total</th>
           </tr></thead>
           <tbody id="channelTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="table-card" style="margin-top:18px;">
+      <div class="table-header">
+        <div class="table-title">Revenue by Brand &amp; Channel</div>
+        <span class="range-badge" id="brandChannelRangeBadge"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th onclick="sortBrandChanTable(0)">Brand</th>
+            <th onclick="sortBrandChanTable(1)">Channel</th>
+            <th onclick="sortBrandChanTable(2)">Brand Type</th>
+            <th class="num" onclick="sortBrandChanTable(3)">Revenue</th>
+            <th class="num" onclick="sortBrandChanTable(4)">% of Total</th>
+          </tr></thead>
+          <tbody id="brandChannelTableBody"></tbody>
         </table>
       </div>
     </div>
@@ -436,6 +456,26 @@ function updateBadge() {
   const badge = document.getElementById('activeBadge');
   if (rangeFrom === ALL_PERIODS[0] && rangeTo === ALL_PERIODS[ALL_PERIODS.length-1]) { badge.innerHTML=''; return; }
   badge.innerHTML = `<span class="range-badge">${fmtPeriod(rangeFrom)} &rarr; ${fmtPeriod(rangeTo)} <button class="x-btn" onclick="clearRange()">&times;</button></span>`;
+}
+
+function clearAllFilters() {
+  // Reset date range
+  rangeFrom = ALL_PERIODS[0]; rangeTo = ALL_PERIODS[ALL_PERIODS.length-1];
+  document.getElementById('fromSelect').value = rangeFrom;
+  document.getElementById('toSelect').value = rangeTo;
+  document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+  document.querySelector('.pill').classList.add('active');
+  // Reset SKU filters if on that page
+  const s = document.getElementById('skuSearch');
+  if (s) s.value = '';
+  const bf = document.getElementById('skuBrandFilter');
+  if (bf) bf.value = '';
+  const cf = document.getElementById('skuChannelFilter');
+  if (cf) cf.value = '';
+  const btf = document.getElementById('skuBrandTypeFilter');
+  if (btf) btf.value = '';
+  updateBadge();
+  renderPage();
 }
 
 function clearRange() {
@@ -603,14 +643,30 @@ function renderBrands() {
   document.getElementById('brandChartSub').textContent = `Net revenue by brand · ${fmtPeriod(rangeFrom)} to ${fmtPeriod(rangeTo)}`;
   document.getElementById('brandRangeBadge').textContent = `${fmtPeriod(rangeFrom)} → ${fmtPeriod(rangeTo)}`;
 
+  // Stacked bar: month on x-axis, stacked by brand
+  const periodList = ALL_PERIODS.filter(p => inRange(p));
+  const topBrands = sorted.slice(0, 12).map(e => e[0]); // top 12 brands
   destroyChart('brandGroupBar');
   charts['brandGroupBar'] = new Chart(document.getElementById('brandGroupBar'), {
     type: 'bar',
     data: {
-      labels: sorted.map(e=>e[0]),
-      datasets: [{ label: 'Revenue', data: sorted.map(e=>e[1]), backgroundColor: sorted.map((_,i)=>COLORS[i%COLORS.length]), borderRadius: 3 }]
+      labels: periodList.map(periodLabel),
+      datasets: topBrands.map((brand, i) => ({
+        label: brand,
+        data: periodList.map(p => data.filter(r => r.period===p && r.brand===brand).reduce((s,r)=>s+r.revenue,0)),
+        backgroundColor: COLORS[i % COLORS.length],
+        borderRadius: 2,
+        stack: 'brands'
+      }))
     },
-    options: { ...CHART_DEFAULTS }
+    options: {
+      ...CHART_DEFAULTS,
+      plugins: {
+        ...CHART_DEFAULTS.plugins,
+        legend: { display: true, position: 'bottom', labels: { color: '#8b949e', font: { size: 10 }, boxWidth: 10, padding: 10 } },
+        tooltip: { ...CHART_DEFAULTS.plugins.tooltip, callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.raw)}` } }
+      }
+    }
   });
 
   // Brand table
@@ -723,6 +779,45 @@ function renderChannel() {
     tr.innerHTML = `<td><span class="badge badge-${bt==='Olli Brands'?'olli':bt==='Partner'?'partner':'pl'}">${bt}</span></td><td>Brand Type</td><td class="num">${fmtFull(rev)}</td><td class="num">${(rev/total*100).toFixed(1)}%</td>`;
     tbody.appendChild(tr);
   });
+
+  // Revenue by brand × channel table
+  document.getElementById('brandChannelRangeBadge').textContent = `${fmtPeriod(rangeFrom)} → ${fmtPeriod(rangeTo)}`;
+  const bcMap = {};
+  data.forEach(r => {
+    const key = r.brand + '|||' + r.channel + '|||' + r.brand_type;
+    bcMap[key] = (bcMap[key] || 0) + r.revenue;
+  });
+  const bcSorted = Object.entries(bcMap).sort((a,b) => b[1]-a[1]);
+  const bcTbody = document.getElementById('brandChannelTableBody');
+  bcTbody.innerHTML = '';
+  bcSorted.forEach(([key, rev]) => {
+    const [brand, ch, bt] = key.split('|||');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${brand}</td>
+      <td><span class="badge badge-${ch==='Medical'?'medical':ch==='Rec Market'?'rec':'private'}">${ch}</span></td>
+      <td><span class="badge badge-${bt==='Olli Brands'?'olli':bt==='Partner'?'partner':'pl'}">${bt}</span></td>
+      <td class="num">${fmtFull(rev)}</td>
+      <td class="num">${(rev/total*100).toFixed(1)}%</td>
+    `;
+    bcTbody.appendChild(tr);
+  });
+}
+
+let brandChanSortDir = [false,false,false,false,false];
+function sortBrandChanTable(col) {
+  brandChanSortDir[col] = !brandChanSortDir[col];
+  const tbody = document.getElementById('brandChannelTableBody');
+  const rows = [...tbody.querySelectorAll('tr')];
+  rows.sort((a,b) => {
+    const av = a.cells[col].textContent.replace(/[$,%MK]/g,'').trim();
+    const bv = b.cells[col].textContent.replace(/[$,%MK]/g,'').trim();
+    const an = parseFloat(av.replace(/,/g,'')), bn = parseFloat(bv.replace(/,/g,''));
+    const asc = brandChanSortDir[col];
+    if (!isNaN(an) && !isNaN(bn)) return asc ? an-bn : bn-an;
+    return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+  });
+  rows.forEach(r => tbody.appendChild(r));
 }
 
 // ====================== SKU PAGE ======================
