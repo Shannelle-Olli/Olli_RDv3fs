@@ -215,6 +215,7 @@
   <button class="nav-btn" onclick="showPage('brands')">By Brand</button>
   <button class="nav-btn" onclick="showPage('channel')">By Channel</button>
   <button class="nav-btn" onclick="showPage('skus')">SKU Detail</button>
+  <button class="nav-btn" onclick="showPage('customer')">By Customer</button>
 </nav>
 
 <main class="main">
@@ -235,7 +236,7 @@
         <div class="legend" id="channelLegend"></div>
       </div>
       <div class="chart-card">
-        <div class="chart-title">Revenue by Brand Type</div>
+        <div class="chart-title">Revenue by Customer</div>
         <div class="chart-subtitle">Olli Brands &middot; Partner &middot; Private Label</div>
         <div style="max-width:280px;margin:0 auto;"><canvas id="brandTypeDonut" height="190"></canvas></div>
         <div class="legend" id="brandTypeLegend"></div>
@@ -368,6 +369,89 @@
       </div>
     </div>
   </div>
+
+  <!-- By Customer -->
+  <div class="page" id="page-customer">
+    <div class="chart-card" style="margin-bottom:18px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+        <div>
+          <div class="chart-title">By Customer</div>
+          <div class="chart-subtitle" id="custPageSub">Revenue by customer — selected period</div>
+        </div>
+        <select class="filter-select" id="custSelect" onchange="renderCustomerDrilldown()" style="min-width:160px;">
+          <option value="">— Select Customer —</option>
+        </select>
+      </div>
+      <!-- Customer overview bars (shown when no customer selected) -->
+      <div id="custOverview">
+        <canvas id="custOverviewBar" height="90"></canvas>
+      </div>
+      <!-- Drilldown (shown when customer selected) -->
+      <div id="custDrilldown" style="display:none;">
+        <div style="display:flex;gap:18px;flex-wrap:wrap;">
+          <!-- Top Brands -->
+          <div style="flex:1;min-width:260px;">
+            <div style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Top Brands</div>
+            <canvas id="custBrandBar" height="140"></canvas>
+          </div>
+          <!-- Top SKUs -->
+          <div style="flex:2;min-width:300px;">
+            <div style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Top SKUs</div>
+            <canvas id="custSKUBar" height="140"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Customer KPI strip (shown when drilldown active) -->
+    <div id="custKPIStrip" style="display:none;margin-bottom:18px;">
+      <div class="kpi-grid" id="custKPICards"></div>
+    </div>
+
+    <!-- Customer overview table -->
+    <div class="table-card" id="custOverviewTable">
+      <div class="table-header">
+        <div class="table-title">All Customers — Revenue Summary</div>
+        <span class="range-badge" id="custTableBadge"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th onclick="sortCustTable(0)" style="cursor:pointer">Customer</th>
+            <th onclick="sortCustTable(1)" style="cursor:pointer">Channel(s)</th>
+            <th onclick="sortCustTable(2)" class="num" style="cursor:pointer">Revenue</th>
+            <th onclick="sortCustTable(3)" class="num" style="cursor:pointer">% of Total</th>
+            <th onclick="sortCustTable(4)" style="cursor:pointer">Top Brand</th>
+          </tr></thead>
+          <tbody id="custTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- SKU Revenue Table — always visible, filters on customer click -->
+    <div class="table-card" style="margin-top:18px;">
+      <div class="table-header">
+        <div>
+          <div class="table-title" id="custSKUTableTitle">Top SKUs — All Customers</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;">Click a customer row or bar above to filter by customer</div>
+        </div>
+        <button id="custSKUClearBtn" onclick="clearCustomerSelection()" style="display:none;background:none;border:1px solid var(--border);color:var(--text2);padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12px;">✕ Show All</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Product Description</th>
+            <th>Brand</th>
+            <th>Channel</th>
+            <th class="num">Revenue</th>
+            <th class="num" id="custSKUPctHeader">% of Total</th>
+          </tr></thead>
+          <tbody id="custSKUTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
 
 </main>
 
@@ -549,7 +633,7 @@ function renderOverview() {
   const data = filteredData();
   const total = data.reduce((s,r) => s+r.revenue, 0);
   const brands = new Set(data.map(r => r.brand)).size;
-  const channels = new Set(data.map(r => r.channel)).size;
+  const activeSKUs = new Set(SKU_DATA.filter(s => skuRevForPeriod(s) > 0).map(s => s['Product Description'])).size;
   const periods = new Set(data.map(r => r.period)).size;
 
   // YoY comparison
@@ -570,7 +654,7 @@ function renderOverview() {
   document.getElementById('kpiRow').innerHTML = `
     <div class="kpi-card"><div class="kpi-label">Net Revenue</div><div class="kpi-value">${fmt(total)}</div><div class="kpi-sub">Selected period${yoyHtml}</div></div>
     <div class="kpi-card"><div class="kpi-label">Active Brands</div><div class="kpi-value">${brands}</div><div class="kpi-sub">Contributing revenue</div></div>
-    <div class="kpi-card"><div class="kpi-label">Revenue Channels</div><div class="kpi-value">${channels}</div><div class="kpi-sub">Medical · Rec · Private Label</div></div>
+    <div class="kpi-card"><div class="kpi-label">Active SKUs</div><div class="kpi-value">${activeSKUs}</div><div class="kpi-sub">With revenue in period</div></div>
     <div class="kpi-card"><div class="kpi-label">Months of Data</div><div class="kpi-value">${periods}</div><div class="kpi-sub">In selected range</div></div>
   `;
 
@@ -606,18 +690,28 @@ function renderOverview() {
   document.getElementById('channelLegend').innerHTML = chanLabels.map((l,i) =>
     `<div class="legend-item"><div class="legend-dot" style="background:${chanColors[i]}"></div>${l} — ${fmt(chanData[l])}</div>`).join('');
 
-  // Brand type donut
-  const btData = sumByKey(data, 'brand_type');
-  const btLabels = Object.keys(btData);
-  const btColors = ['#4caf82','#c8a96e','#e07a5f'];
+  // Customer donut (top 8 + Other)
+  const custMap = {};
+  SKU_DATA.forEach(s => {
+    const rev = skuRevForPeriod(s);
+    if (rev > 0) custMap[s.Customer] = (custMap[s.Customer] || 0) + rev;
+  });
+  const custSorted = Object.entries(custMap).sort((a,b) => b[1]-a[1]);
+  const TOP_N = 8;
+  const topCusts = custSorted.slice(0, TOP_N);
+  const otherRev = custSorted.slice(TOP_N).reduce((s,[,v]) => s+v, 0);
+  if (otherRev > 0) topCusts.push(['Other', otherRev]);
+  const custLabels = topCusts.map(([k]) => k);
+  const custVals = topCusts.map(([,v]) => v);
+  const custColors = ['#c8a96e','#7eb8a4','#9b8dd4','#e07a5f','#4caf82','#5b8fd4','#e0a45f','#a4c87e','#8b949e'];
   destroyChart('brandTypeDonut');
   charts['brandTypeDonut'] = new Chart(document.getElementById('brandTypeDonut'), {
     type: 'doughnut',
-    data: { labels: btLabels, datasets: [{ data: Object.values(btData), backgroundColor: btColors, borderWidth: 2, borderColor: '#161b22' }] },
+    data: { labels: custLabels, datasets: [{ data: custVals, backgroundColor: custColors, borderWidth: 2, borderColor: '#161b22' }] },
     options: { responsive: true, plugins: { legend: { display: false }, tooltip: { backgroundColor: '#161b22', titleColor: '#e6edf3', bodyColor: '#8b949e', borderColor: '#30363d', borderWidth: 1, callbacks: { label: ctx => ' ' + fmt(ctx.raw) } } } }
   });
-  document.getElementById('brandTypeLegend').innerHTML = btLabels.map((l,i) =>
-    `<div class="legend-item"><div class="legend-dot" style="background:${btColors[i]}"></div>${l} — ${fmt(btData[l])}</div>`).join('');
+  document.getElementById('brandTypeLegend').innerHTML = custLabels.map((l,i) =>
+    `<div class="legend-item"><div class="legend-dot" style="background:${custColors[i]}"></div>${l} — ${fmt(custVals[i])}</div>`).join('');
 
   // Brand bars
   const brandData = sumByKey(data, 'brand');
@@ -946,6 +1040,7 @@ function renderPage() {
   else if (currentPage === 'brands') renderBrands();
   else if (currentPage === 'channel') renderChannel();
   else if (currentPage === 'skus') filterSKUs();
+  else if (currentPage === 'customer') renderCustomer();
 }
 
 // ====================== INIT ======================
@@ -959,6 +1054,295 @@ initSlicer();
 initBrandFilter();
 updateBadge();
 renderOverview();
+// ====================== BY CUSTOMER ======================
+function fmtShort(n) { return fmt(n); }
+let custTableData = [], custSortCol = 2, custSortAsc = false;
+
+function renderCustomer() {
+  const activeCust = document.getElementById('custSelect')?.value || '';
+  populateCustSelect();
+  if (activeCust) document.getElementById('custSelect').value = activeCust;
+  renderCustOverviewChart();
+  renderCustTable();
+  if (activeCust) {
+    renderCustomerDrilldown();
+  } else {
+    renderSKUList(null);
+    document.getElementById('custOverview').style.display = '';
+    document.getElementById('custDrilldown').style.display = 'none';
+    document.getElementById('custKPIStrip').style.display = 'none';
+  }
+  const rangeLabel = (rangeFrom === ALL_PERIODS[0] && rangeTo === ALL_PERIODS[ALL_PERIODS.length-1])
+    ? 'All Time'
+    : (fmtPeriod(rangeFrom) + ' → ' + fmtPeriod(rangeTo));
+  document.getElementById('custPageSub').textContent = 'Revenue by customer — ' + rangeLabel;
+  document.getElementById('custTableBadge').textContent = rangeLabel === 'All Time' ? '' : rangeLabel;
+}
+
+function populateCustSelect() {
+  const sel = document.getElementById('custSelect');
+  const current = sel.value;
+  const customers = [...new Set(SKU_DATA.map(s => s.Customer))].sort();
+  sel.innerHTML = '<option value="">— Select Customer —</option>';
+  customers.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = c;
+    if (c === current) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function custRevForRow(s) {
+  // Sum only the revenue for years that have at least one month in the selected range,
+  // scaled proportionally by how many months of that year are included.
+  const years = [2023, 2024, 2025, 2026];
+  let total = 0;
+  years.forEach(y => {
+    const monthsInYear = ALL_PERIODS.filter(p => p.startsWith(y) && inRange(p));
+    if (monthsInYear.length === 0) return;
+    const allMonthsInYear = ALL_PERIODS.filter(p => p.startsWith(y));
+    // Scale revenue by fraction of year included
+    const fraction = allMonthsInYear.length > 0 ? monthsInYear.length / allMonthsInYear.length : 0;
+    total += (s[`Rev_${y}`] || 0) * fraction;
+  });
+  return total;
+}
+
+function getCustAggregates() {
+  // Group SKU_DATA by customer
+  const map = {};
+  SKU_DATA.forEach(s => {
+    const rev = custRevForRow(s);
+    if (!rev) return;
+    const c = s.Customer;
+    if (!map[c]) map[c] = { customer: c, rev: 0, brands: {}, skus: {}, channels: new Set() };
+    map[c].rev += rev;
+    map[c].brands[s.Brand] = (map[c].brands[s.Brand] || 0) + rev;
+    const sku = s['Product Description'];
+    map[c].skus[sku] = (map[c].skus[sku] || 0) + rev;
+    map[c].channels.add(s['Channel Type']);
+  });
+  return Object.values(map).sort((a,b) => b.rev - a.rev);
+}
+
+function renderCustOverviewChart() {
+  destroyChart('custOverviewBar');
+  const data = getCustAggregates().slice(0, 15);
+  const colors = ['#7eb8a4','#5b9bd5','#c8a96e','#e07a5f','#9b72cf','#5cb8e4','#e8a838','#6bc48e','#d4688a','#8fa8c8','#c4a87e','#72b8c0','#e87040','#8ebc5a','#b88ec4'];
+  if (!data.length) return;
+  charts['custOverviewBar'] = new Chart(document.getElementById('custOverviewBar'), {
+    type: 'bar',
+    data: {
+      labels: data.map(d => d.customer),
+      datasets: [{ label: 'Revenue', data: data.map(d => d.rev), backgroundColor: colors, borderRadius: 3 }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      onClick: (evt, elements) => {
+        if (elements.length > 0) {
+          const cust = data[elements[0].index].customer;
+          document.getElementById('custSelect').value = cust;
+          renderCustomerDrilldown();
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ' ' + fmtFull(ctx.raw) } }
+      },
+      scales: {
+        x: { ticks: { callback: v => fmtShort(v), color: '#888', font:{size:10} }, grid:{color:'rgba(255,255,255,0.05)'} },
+        y: { ticks: { color: '#ccc', font:{size:11} }, grid:{display:false} }
+      }
+    }
+  });
+}
+
+function renderCustTable() {
+  const aggs = getCustAggregates();
+  const total = aggs.reduce((s,d) => s + d.rev, 0);
+  custTableData = aggs.map(d => {
+    const topBrand = Object.entries(d.brands).sort((a,b)=>b[1]-a[1])[0]?.[0] || '—';
+    return { ...d, topBrand, pct: total ? d.rev/total : 0 };
+  });
+  sortAndRenderCustTable();
+}
+
+function sortCustTable(col) {
+  if (custSortCol === col) custSortAsc = !custSortAsc;
+  else { custSortCol = col; custSortAsc = col < 2; }
+  sortAndRenderCustTable();
+}
+
+function sortAndRenderCustTable() {
+  const d = [...custTableData];
+  d.sort((a,b) => {
+    const vals = [a.customer, [...a.channels].join(), a.rev, a.pct, a.topBrand];
+    const valsB = [b.customer, [...b.channels].join(), b.rev, b.pct, b.topBrand];
+    const av = vals[custSortCol], bv = valsB[custSortCol];
+    const cmp = typeof av === 'number' ? av - bv : String(av).localeCompare(String(bv));
+    return custSortAsc ? cmp : -cmp;
+  });
+  const tbody = document.getElementById('custTableBody');
+  tbody.innerHTML = '';
+  const activeCust = document.getElementById('custSelect').value;
+  d.forEach(row => {
+    const chans = [...row.channels].map(c => `<span class="badge badge-${c==='Medical'?'medical':c==='Rec Market'?'rec':'private'}">${c}</span>`).join(' ');
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    tr.title = 'Click to see SKUs for this customer';
+    if (row.customer === activeCust) tr.style.background = 'rgba(94,186,164,0.08)';
+    tr.onclick = () => selectCustomer(row.customer);
+    tr.innerHTML = `
+      <td><strong>${row.customer}</strong></td>
+      <td>${chans}</td>
+      <td class="num">${fmtFull(row.rev)}</td>
+      <td class="num">${(row.pct*100).toFixed(1)}%</td>
+      <td style="font-size:12px;">${row.topBrand}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// Unified SKU list — null customer = all customers
+function renderSKUList(customer) {
+  const rows = customer
+    ? SKU_DATA.filter(s => s.Customer === customer && custRevForRow(s) > 0)
+    : SKU_DATA.filter(s => custRevForRow(s) > 0);
+
+  const skuMap = {};
+  rows.forEach(s => {
+    const rev = custRevForRow(s);
+    const key = s['Product Description'];
+    if (!skuMap[key]) skuMap[key] = { sku: key, brand: s.Brand, channel: s['Channel Type'], rev: 0 };
+    skuMap[key].rev += rev;
+  });
+  const skus = Object.values(skuMap).sort((a,b) => b.rev - a.rev);
+  const total = skus.reduce((s,r) => s + r.rev, 0);
+
+  const pctLabel = customer ? `% of ${customer}` : '% of Total';
+  document.getElementById('custSKUPctHeader').textContent = pctLabel;
+  document.getElementById('custSKUTableTitle').textContent = customer ? `Top SKUs — ${customer}` : 'Top SKUs — All Customers';
+  const clearBtn = document.getElementById('custSKUClearBtn');
+  if (clearBtn) clearBtn.style.display = customer ? '' : 'none';
+
+  const tbody = document.getElementById('custSKUTableBody');
+  tbody.innerHTML = '';
+  skus.forEach(r => {
+    const pct = total ? (r.rev/total*100).toFixed(1) : '0.0';
+    const chan = r.channel;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${r.sku}">${r.sku}</td>
+      <td style="font-size:12px;">${r.brand}</td>
+      <td><span class="badge badge-${chan==='Medical'?'medical':chan==='Rec Market'?'rec':'private'}">${chan}</span></td>
+      <td class="num">${fmtFull(r.rev)}</td>
+      <td class="num">${pct}%</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function selectCustomer(cust) {
+  document.getElementById('custSelect').value = cust;
+  renderCustomerDrilldown();
+}
+
+function renderCustomerDrilldown() {
+  const cust = document.getElementById('custSelect').value;
+  if (!cust) { clearCustomerSelection(); return; }
+
+  const rows = SKU_DATA.filter(s => s.Customer === cust && custRevForRow(s) > 0);
+  if (!rows.length) return;
+
+  // Aggregate by brand
+  const brandMap = {};
+  rows.forEach(s => {
+    const rev = custRevForRow(s);
+    brandMap[s.Brand] = (brandMap[s.Brand] || 0) + rev;
+  });
+  const brands = Object.entries(brandMap).sort((a,b)=>b[1]-a[1]);
+  const totalRev = brands.reduce((s,b)=>s+b[1],0);
+
+  const skuMap = {};
+  rows.forEach(s => {
+    const rev = custRevForRow(s);
+    skuMap[s['Product Description']] = (skuMap[s['Product Description']] || 0) + rev;
+  });
+  const skus = Object.entries(skuMap).sort((a,b)=>b[1]-a[1]);
+
+  // Show drilldown charts + KPIs
+  document.getElementById('custOverview').style.display = 'none';
+  document.getElementById('custDrilldown').style.display = '';
+  document.getElementById('custKPIStrip').style.display = '';
+
+  // Keep customer table visible but re-render with highlight
+  sortAndRenderCustTable();
+
+  // Update SKU list for this customer
+  renderSKUList(cust);
+
+  // KPI cards
+  const channels = [...new Set(rows.map(s=>s['Channel Type']))];
+  document.getElementById('custKPICards').innerHTML = `
+    <div class="kpi-card"><div class="kpi-label">Total Revenue</div><div class="kpi-value">${fmtFull(totalRev)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Brands Carried</div><div class="kpi-value">${brands.length}</div></div>
+    <div class="kpi-card"><div class="kpi-label">SKUs Active</div><div class="kpi-value">${skus.length}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Channel(s)</div><div class="kpi-value" style="font-size:14px;">${channels.join(', ')}</div></div>
+  `;
+
+  // Brand bar chart (top 10)
+  const brandColors = ['#7eb8a4','#5b9bd5','#c8a96e','#e07a5f','#9b72cf','#5cb8e4','#e8a838','#6bc48e','#d4688a','#8fa8c8'];
+  const top10brands = brands.slice(0,10);
+  destroyChart('custBrandBar');
+  destroyChart('custSKUBar');
+  charts['custBrandBar'] = new Chart(document.getElementById('custBrandBar'), {
+    type: 'bar',
+    data: {
+      labels: top10brands.map(b => b[0]),
+      datasets: [{ data: top10brands.map(b=>b[1]), backgroundColor: brandColors, borderRadius:3 }]
+    },
+    options: {
+      indexAxis: 'y', responsive: true,
+      plugins: { legend:{display:false}, tooltip:{callbacks:{label:ctx=>' '+fmtFull(ctx.raw)}} },
+      scales: {
+        x:{ticks:{callback:v=>fmtShort(v),color:'#888',font:{size:10}},grid:{color:'rgba(255,255,255,0.05)'}},
+        y:{ticks:{color:'#ccc',font:{size:10}},grid:{display:false}}
+      }
+    }
+  });
+
+  // SKU bar chart (top 12)
+  const top12skus = skus.slice(0,12);
+  charts['custSKUBar'] = new Chart(document.getElementById('custSKUBar'), {
+    type: 'bar',
+    data: {
+      labels: top12skus.map(s => s[0].length>38 ? s[0].slice(0,36)+'…' : s[0]),
+      datasets: [{ data: top12skus.map(s=>s[1]), backgroundColor: '#5b9bd5', borderRadius:3 }]
+    },
+    options: {
+      indexAxis: 'y', responsive: true,
+      plugins: { legend:{display:false}, tooltip:{callbacks:{label:ctx=>' '+fmtFull(ctx.raw), title:ctx=>top12skus[ctx[0].dataIndex][0]}} },
+      scales: {
+        x:{ticks:{callback:v=>fmtShort(v),color:'#888',font:{size:10}},grid:{color:'rgba(255,255,255,0.05)'}},
+        y:{ticks:{color:'#ccc',font:{size:10}},grid:{display:false}}
+      }
+    }
+  });
+}
+
+function clearCustomerSelection() {
+  document.getElementById('custSelect').value = '';
+  destroyChart('custBrandBar');
+  destroyChart('custSKUBar');
+  document.getElementById('custOverview').style.display = '';
+  document.getElementById('custDrilldown').style.display = 'none';
+  document.getElementById('custKPIStrip').style.display = 'none';
+  renderCustOverviewChart();
+  renderCustTable();
+  renderSKUList(null);
+}
+
+
 </script>
 </div><!-- end #dashboard -->
 </body>
